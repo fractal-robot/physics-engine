@@ -2,6 +2,7 @@ package main
 
 import "core:fmt"
 import "core:log"
+import "core:math"
 import glm "core:math/linalg/glsl"
 import "core:time"
 import gl "vendor:OpenGL"
@@ -16,6 +17,8 @@ WINDOW_HEIGHT :: 1024
 GL_VERSION_MAJOR :: 4
 GL_VERSION_MINOR :: 4
 
+deltaTime: f64
+
 CTX :: struct {
 	window:      ^sdl.Window,
 	renderer:    ^sdl.Renderer,
@@ -24,12 +27,37 @@ CTX :: struct {
 	shouldClose: bool,
 	gl:          sdl.GLContext,
 }
-
 ctx: CTX
+
+Camera :: struct {
+	pos:        glm.vec3,
+	front:      glm.vec3,
+	up:         glm.vec3,
+	view:       glm.mat4,
+	speed:      f32,
+	sensivity:  f32,
+	yaw:        f32,
+	pitch:      f32,
+	firstMouse: b8,
+}
+camera: Camera
 
 Vertex :: struct {
 	pos: glm.vec3,
 	col: glm.vec4,
+}
+
+initCamera :: proc() {
+	camera.pos = {-4, 0, 0}
+	camera.front = {1, 0, 0}
+	up: glm.vec3 = {0, 1, 0}
+	camera.speed = .005
+	camera.up = {0, 1, 0}
+
+	// 	camera.yaw = WINDOW_WIDTH / 2
+	// 	camera.pitch = WINDOW_HEIGHT / 2
+
+	camera.sensivity = .05
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -66,6 +94,8 @@ init :: proc() -> (ok: bool) {
 		return false
 	}
 
+	sdl.SetRelativeMouseMode(true)
+
 	sdl.GL_SetAttribute(.CONTEXT_PROFILE_MASK, i32(sdl.GLprofile.CORE))
 	sdl.GL_SetAttribute(.CONTEXT_MAJOR_VERSION, GL_VERSION_MAJOR)
 	sdl.GL_SetAttribute(.CONTEXT_MINOR_VERSION, GL_VERSION_MINOR)
@@ -73,42 +103,17 @@ init :: proc() -> (ok: bool) {
 	ctx.gl = sdl.GL_CreateContext(ctx.window)
 	gl.load_up_to(GL_VERSION_MAJOR, GL_VERSION_MINOR, sdl.gl_set_proc_address)
 
+	gl.Enable(gl.DEPTH_TEST)
+
 	return true
 }
-
-////////////////////////////////////////////////////////////////////////////////
-//// 
-
-processControls :: proc() -> (quit: bool) {
-	for sdl.PollEvent(&ctx.event) {
-		#partial switch ctx.event.type {
-		case .KEYDOWN:
-			#partial switch ctx.event.key.keysym.sym {
-			case .ESCAPE:
-				return true
-			}
-		case .QUIT:
-			return true
-		}
-	}
-	return
-}
-
-processMovements :: proc() {
-	sdl.PumpEvents()
-
-	if b8(ctx.keyboard[sdl.SCANCODE_A]) {
-		gl.PolygonMode(gl.FRONT_AND_BACK, gl.LINE)
-	} else do gl.PolygonMode(gl.FRONT_AND_BACK, gl.FILL)
-
-}
-
 
 ////////////////////////////////////////////////////////////////////////////////
 //// Main 
 
 main :: proc() {
 	init()
+	initCamera()
 
 
 	vertices := []Vertex {
@@ -177,27 +182,47 @@ main :: proc() {
 	gl.UseProgram(shaderProgram)
 
 
-	proj: glm.mat4 = glm.mat4Perspective(
+	proj := glm.mat4Perspective(
 		glm.radians(f32(45.0)),
 		WINDOW_WIDTH / WINDOW_HEIGHT,
 		0.1,
 		100,
 	)
 
-	model: glm.mat4
-	model = model * glm.mat4Rotate({1, 0, 0}, glm.radians(f32(45)))
+	model := glm.mat4(1)
+	model = glm.mat4Translate({4.1, 0, 0}) * model
+	model = glm.mat4Rotate({1, 0, -2}, glm.radians(f32(45))) * model
 
-	view: glm.mat4
-	view = view * glm.mat4Translate({0, 0, -3})
+	uniforms := gl.get_uniforms_from_program(shaderProgram)
+	gl.UniformMatrix4fv(uniforms["model"].location, 1, false, &model[0, 0])
+	gl.UniformMatrix4fv(uniforms["projection"].location, 1, false, &proj[0, 0])
 
+	currentFrame, lastFrame: i64
 
 	loop: for {
+
+		currentFrame = time.tick_now()._nsec
+		deltaTime = f64(currentFrame - lastFrame) / 100000
+		lastFrame = currentFrame
+
 		if processControls() do break loop
 		processMovements()
+		camera.view = glm.mat4LookAt(
+			camera.pos,
+			camera.pos + camera.front,
+			camera.up,
+		)
+		gl.UniformMatrix4fv(
+			uniforms["view"].location,
+			1,
+			false,
+			&camera.view[0, 0],
+		)
+
 
 		gl.Viewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT)
 		gl.ClearColor(0.5, 0.7, 1.0, 1.0)
-		gl.Clear(gl.COLOR_BUFFER_BIT)
+		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 		gl.DrawElements(gl.TRIANGLES, i32(len(indices)), gl.UNSIGNED_SHORT, nil)
 		sdl.GL_SwapWindow(ctx.window)
 
