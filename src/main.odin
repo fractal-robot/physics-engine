@@ -6,7 +6,9 @@ import "core:math"
 import glm "core:math/linalg/glsl"
 import "core:time"
 import gl "vendor:OpenGL"
+import mu "vendor:microui"
 import sdl "vendor:sdl2"
+
 
 WINDOW_TITLE :: "window"
 WINDOW_FLAGS :: sdl.WindowFlags{.SHOWN}
@@ -20,12 +22,16 @@ GL_VERSION_MINOR :: 4
 deltaTime: f64
 
 CTX :: struct {
-	window:      ^sdl.Window,
-	renderer:    ^sdl.Renderer,
-	event:       sdl.Event,
-	keyboard:    []u8,
-	shouldClose: bool,
-	gl:          sdl.GLContext,
+	window:        ^sdl.Window,
+	renderer:      ^sdl.Renderer,
+	event:         sdl.Event,
+	keyboard:      []u8,
+	shouldClose:   bool,
+	gl:            sdl.GLContext,
+	mu:            mu.Context,
+	currentTime:   i64,
+	currentSecond: f64,
+	shaderID:      u32,
 }
 ctx: CTX
 
@@ -44,21 +50,9 @@ camera: Camera
 
 Vertex :: struct {
 	pos: glm.vec3,
-	col: glm.vec4,
+	col: glm.vec3,
 }
 
-initCamera :: proc() {
-	camera.pos = {-4, 0, 0}
-	camera.front = {1, 0, 0}
-	up: glm.vec3 = {0, 1, 0}
-	camera.speed = .005
-	camera.up = {0, 1, 0}
-
-	// 	camera.yaw = WINDOW_WIDTH / 2
-	// 	camera.pitch = WINDOW_HEIGHT / 2
-
-	camera.sensivity = .05
-}
 
 ////////////////////////////////////////////////////////////////////////////////
 //// Init 
@@ -105,6 +99,20 @@ init :: proc() -> (ok: bool) {
 
 	gl.Enable(gl.DEPTH_TEST)
 
+	gl.Viewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT)
+
+	gl.PolygonMode(gl.FRONT_AND_BACK, gl.LINE)
+
+	{
+		camera.pos = {-4, 0, 0}
+		camera.front = {1, 0, 0}
+		up: glm.vec3 = {0, 1, 0}
+		camera.speed = .0220
+		camera.up = {0, 1, 0}
+		camera.sensivity = .05
+	}
+
+
 	return true
 }
 
@@ -113,120 +121,86 @@ init :: proc() -> (ok: bool) {
 
 main :: proc() {
 	init()
-	initCamera()
 
+	cube = createCube()
 
-	vertices := []Vertex {
-		{{-0.5, +0.5, 0}, {1.0, 0.0, 0.0, 0.75}},
-		{{-0.5, -0.5, 0}, {1.0, 1.0, 0.0, 0.75}},
-		{{+0.5, -0.5, 0}, {0.0, 1.0, 0.0, 0.75}},
-		{{+0.5, +0.5, 0}, {0.0, 0.0, 1.0, 0.75}},
-	}
-
-	indices := []u16{0, 1, 2, 2, 3, 0}
-
-	vao: u32
-	gl.GenVertexArrays(1, &vao)
-	gl.BindVertexArray(vao)
-
-	vbo, ebo: u32
-	gl.GenBuffers(1, &vbo)
-	gl.GenBuffers(1, &ebo)
-
-	gl.BindBuffer(gl.ARRAY_BUFFER, vbo)
-	gl.BufferData(
-		gl.ARRAY_BUFFER,
-		len(vertices) * size_of(vertices[0]),
-		raw_data(vertices),
-		gl.STATIC_DRAW,
+	shaderProgramOk: bool
+	ctx.shaderID, shaderProgramOk = gl.load_shaders_file(
+		"../shader/main.vert",
+		"../shader/main.frag",
 	)
-
-	gl.EnableVertexAttribArray(0)
-	gl.EnableVertexAttribArray(1)
-	gl.VertexAttribPointer(
-		0,
-		3,
-		gl.FLOAT,
-		false,
-		size_of(Vertex),
-		offset_of(Vertex, pos),
-	)
-
-	gl.VertexAttribPointer(
-		1,
-		4,
-		gl.FLOAT,
-		false,
-		size_of(Vertex),
-		offset_of(Vertex, col),
-	)
-
-
-	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo)
-	gl.BufferData(
-		gl.ELEMENT_ARRAY_BUFFER,
-		len(indices) * size_of(indices[0]),
-		raw_data(indices),
-		gl.STATIC_DRAW,
-	)
-
-	shaderProgram, shaderProgramOk := gl.load_shaders_file(
-		"../shader/vertex.glsl",
-		"../shader/fragment.glsl",
-	)
-
 	if !shaderProgramOk {
 		log.errorf("Failed to create GLSL program.")
 		return
 	}
-	gl.UseProgram(shaderProgram)
-
+	gl.UseProgram(ctx.shaderID)
 
 	proj := glm.mat4Perspective(
 		glm.radians(f32(45.0)),
 		WINDOW_WIDTH / WINDOW_HEIGHT,
 		0.1,
-		100,
+		1000,
 	)
 
-	model := glm.mat4(1)
-	model = glm.mat4Translate({4.1, 0, 0}) * model
-	model = glm.mat4Rotate({1, 0, -2}, glm.radians(f32(45))) * model
-
-	uniforms := gl.get_uniforms_from_program(shaderProgram)
-	gl.UniformMatrix4fv(uniforms["model"].location, 1, false, &model[0, 0])
+	uniforms := gl.get_uniforms_from_program(ctx.shaderID)
 	gl.UniformMatrix4fv(uniforms["projection"].location, 1, false, &proj[0, 0])
 
 	currentFrame, lastFrame: i64
 
-	loop: for {
 
-		currentFrame = time.tick_now()._nsec
-		deltaTime = f64(currentFrame - lastFrame) / 100000
-		lastFrame = currentFrame
+	newTime: i64
+	timer: time.Stopwatch
+	time.stopwatch_start(&timer)
+
+	initTestParticle()
+
+	refCube := createCube()
+
+	cube = createCube()
+
+	counter := 1
+
+	loop: for {
+		newTime := time.tick_now()._nsec
+		deltaTime = f64(newTime - ctx.currentTime) / 100000
+		ctx.currentTime = newTime
+		// ctx.currentSecond = time.duration_seconds()
+
+		ctx.currentSecond = time.duration_seconds(time.stopwatch_duration(timer))
 
 		if processControls() do break loop
 		processMovements()
-		camera.view = glm.mat4LookAt(
-			camera.pos,
-			camera.pos + camera.front,
-			camera.up,
-		)
-		gl.UniformMatrix4fv(
-			uniforms["view"].location,
-			1,
-			false,
-			&camera.view[0, 0],
-		)
 
 
-		gl.Viewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT)
-		gl.ClearColor(0.5, 0.7, 1.0, 1.0)
+		{
+			camera.view = glm.mat4LookAt(
+				camera.pos,
+				camera.pos + camera.front,
+				camera.up,
+			)
+			gl.UniformMatrix4fv(
+				uniforms["view"].location,
+				1,
+				false,
+				&camera.view[0, 0],
+			)
+		}
+
+
+		gl.ClearColor(0, 0, 0, 1)
 		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
-		gl.DrawElements(gl.TRIANGLES, i32(len(indices)), gl.UNSIGNED_SHORT, nil)
+
+		gl.UseProgram(ctx.shaderID)
+
+		if counter % 5000 == 0 do initTestParticle()
+
+
+		updateParticles()
+		drawParticles()
+
+
 		sdl.GL_SwapWindow(ctx.window)
 
+		counter += 1
 	}
-
-
 }

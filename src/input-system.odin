@@ -41,33 +41,29 @@ handleCamera :: proc(xOffset, yOffset: i32) {
 		math.sin(glm.radians(camera.yaw)) * math.cos(glm.radians(camera.pitch))
 
 	camera.front = glm.normalize(direction)
-	fmt.println(camera.front)
 }
 
 processMovements :: proc() {
 	sdl.PumpEvents()
 
+	/*
 	if b8(ctx.keyboard[sdl.SCANCODE_Q]) {
 		gl.PolygonMode(gl.FRONT_AND_BACK, gl.LINE)
 	} else do gl.PolygonMode(gl.FRONT_AND_BACK, gl.FILL)
+*/
+
+	fixedFront := glm.normalize(glm.vec3{camera.front.x, 0, camera.front.z})
+	fixedRight := glm.normalize(glm.cross(fixedFront, camera.up))
+	lookingSpeed := camera.speed * f32(deltaTime)
 
 	// Camera movements
-	if b8(ctx.keyboard[sdl.SCANCODE_W]) {
-		camera.pos += camera.front * camera.speed * f32(deltaTime)
+	if b8(ctx.keyboard[sdl.SCANCODE_W]) do camera.pos += fixedFront * lookingSpeed
+	if b8(ctx.keyboard[sdl.SCANCODE_S]) do camera.pos -= fixedFront * lookingSpeed
+	if b8(ctx.keyboard[sdl.SCANCODE_A]) do camera.pos -= fixedRight * lookingSpeed
+	if b8(ctx.keyboard[sdl.SCANCODE_D]) do camera.pos += fixedRight * lookingSpeed
+	if b8(ctx.keyboard[sdl.SCANCODE_E]) do camera.pos -= camera.up * lookingSpeed
+	if b8(ctx.keyboard[sdl.SCANCODE_SPACE]) {
+		camera.pos += camera.up * lookingSpeed
 	}
-	if b8(ctx.keyboard[sdl.SCANCODE_S]) {
-		camera.pos -= camera.front * camera.speed * f32(deltaTime)
-	}
-	if b8(ctx.keyboard[sdl.SCANCODE_A]) {
-		camera.pos -=
-			glm.normalize(glm.cross(camera.front, camera.up)) *
-			camera.speed *
-			f32(deltaTime)
-	}
-	if b8(ctx.keyboard[sdl.SCANCODE_D]) {
-		camera.pos +=
-			glm.normalize(glm.cross(camera.front, camera.up)) *
-			camera.speed *
-			f32(deltaTime)
-	}
+
 }
