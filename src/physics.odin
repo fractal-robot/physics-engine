@@ -48,29 +48,31 @@ particleKineticEnergy :: proc(particle: Particle) -> (energy: real) {
 }
 
 updateParticles :: proc() {
-	for i in 0 ..< len(particles) {
-		currentParticle: ^Particle = &particles[i]
-		if currentParticle.type == .unused do unordered_remove(&particles, i)
+	if len(particles) == 0 do return
 
-		particleIntegrate(currentParticle)
-
-		if currentParticle.pos.y < 0 ||
-		   currentParticle.startTime + 50 > real(ctx.currentSecond) ||
-		   currentParticle.pos.z > 200 {
-			particles[i].type = .unused
-			updateParticles()
+	// Traversal in reverse so we don't have to call updateParticle again when
+	// removing element
+	#reverse for &currentParticle, index in particles {
+		if real(ctx.currentSecond) - real(currentParticle.startTime) > 50 {
+			unordered_remove(&particles, index)
 		}
+
+		particleIntegrate(&currentParticle)
 	}
 }
 
 cube: Shape
 
-
 drawParticles :: proc() {
+	if len(particles) == 0 do return
+
+
 	uniforms := gl.get_uniforms_from_program(ctx.shaderID)
 
 	for i in 0 ..< len(particles) {
+		if particles[i].type == .unused do continue
 		model := glm.mat4(1)
+		model = glm.mat4Scale(ctx.cubeSize) * model
 		model = glm.mat4Translate(particles[i].pos.xyz) * model
 		gl.UniformMatrix4fv(uniforms["model"].location, 1, false, &model[0, 0])
 
@@ -91,5 +93,7 @@ drawParticles :: proc() {
 }
 
 initTestParticle :: proc() {
-	append(&particles, getProjectile(rand.choice_enum(ShotType)))
+	type := rand.choice_enum(ShotType)
+	if type == ShotType.unused do initTestParticle()
+	append(&particles, getProjectile(type))
 }

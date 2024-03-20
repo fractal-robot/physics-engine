@@ -5,9 +5,13 @@ import "core:log"
 import "core:math"
 import glm "core:math/linalg/glsl"
 import "core:time"
+
 import gl "vendor:OpenGL"
-import mu "vendor:microui"
 import sdl "vendor:sdl2"
+
+import im "vendor:imgui"
+import "vendor:imgui/imgui_impl_opengl3"
+import "vendor:imgui/imgui_impl_sdl2"
 
 
 WINDOW_TITLE :: "window"
@@ -28,10 +32,12 @@ CTX :: struct {
 	keyboard:      []u8,
 	shouldClose:   bool,
 	gl:            sdl.GLContext,
-	mu:            mu.Context,
 	currentTime:   i64,
 	currentSecond: f64,
 	shaderID:      u32,
+	relativeMode:  sdl.bool,
+	cubeSize:      f32,
+	imIO:          ^im.IO,
 }
 ctx: CTX
 
@@ -41,6 +47,7 @@ Camera :: struct {
 	up:         glm.vec3,
 	view:       glm.mat4,
 	speed:      f32,
+	speedShift: bool,
 	sensivity:  f32,
 	yaw:        f32,
 	pitch:      f32,
@@ -52,7 +59,6 @@ Vertex :: struct {
 	pos: glm.vec3,
 	col: glm.vec3,
 }
-
 
 ////////////////////////////////////////////////////////////////////////////////
 //// Init 
@@ -76,6 +82,8 @@ init :: proc() -> (ok: bool) {
 		return false
 	}
 
+	sdl.SetWindowFullscreen(ctx.window, nil)
+
 	ctx.renderer = sdl.CreateRenderer(ctx.window, -1, {.ACCELERATED})
 	if ctx.renderer == nil {
 		log.errorf("[ERROR] sdl.CreateRenderer failed.")
@@ -87,8 +95,6 @@ init :: proc() -> (ok: bool) {
 		log.errorf("[ERROR] sdl.GetKeyboardState failed.")
 		return false
 	}
-
-	sdl.SetRelativeMouseMode(true)
 
 	sdl.GL_SetAttribute(.CONTEXT_PROFILE_MASK, i32(sdl.GLprofile.CORE))
 	sdl.GL_SetAttribute(.CONTEXT_MAJOR_VERSION, GL_VERSION_MAJOR)
@@ -110,6 +116,27 @@ init :: proc() -> (ok: bool) {
 		camera.speed = .0220
 		camera.up = {0, 1, 0}
 		camera.sensivity = .05
+	}
+
+	{
+		im.CHECKVERSION()
+		im.CreateContext()
+
+		ctx.imIO = im.GetIO()
+		im.FontAtlas_AddFontFromFileTTF(
+			ctx.imIO.Fonts,
+			"../font/SauceCodeProNerdFont-Regular.ttf",
+			16,
+		)
+		im.StyleColorsDark()
+
+		imgui_impl_sdl2.InitForOpenGL(ctx.window, ctx.gl)
+		imgui_impl_opengl3.Init(nil)
+
+	}
+
+	{
+		ctx.cubeSize = 1
 	}
 
 
@@ -152,11 +179,10 @@ main :: proc() {
 	timer: time.Stopwatch
 	time.stopwatch_start(&timer)
 
-	initTestParticle()
-
 	refCube := createCube()
-
 	cube = createCube()
+
+	initTestParticle()
 
 	counter := 1
 
@@ -170,7 +196,6 @@ main :: proc() {
 
 		if processControls() do break loop
 		processMovements()
-
 
 		{
 			camera.view = glm.mat4LookAt(
@@ -190,14 +215,41 @@ main :: proc() {
 		gl.ClearColor(0, 0, 0, 1)
 		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
-		gl.UseProgram(ctx.shaderID)
-
-		if counter % 5000 == 0 do initTestParticle()
-
-
-		updateParticles()
 		drawParticles()
 
+		{
+			imgui_impl_opengl3.NewFrame()
+			imgui_impl_sdl2.NewFrame()
+			im.NewFrame()
+
+			flags: im.WindowFlags = im.WindowFlags_NoDecoration
+
+			im.SetNextWindowPos({20, 20})
+			im.SetNextWindowBgAlpha(1)
+			im.SetNextWindowSize({400, 80})
+
+
+			if im.Begin("controls", nil, flags) {
+				im.Text(
+					"Application average %.3f ms/frame (%.1f FPS)",
+					1000.0 / ctx.imIO.Framerate,
+					ctx.imIO.Framerate,
+				)
+				im.Text("Physics instances: %i", len(particles))
+				im.SliderFloat("Cube size", &ctx.cubeSize, 0, 10)
+			}
+
+			im.End()
+			im.Render()
+			imgui_impl_opengl3.RenderDrawData(im.GetDrawData())
+		}
+
+		gl.UseProgram(ctx.shaderID)
+
+
+		if ctx.relativeMode == true do updateParticles()
+
+		if counter % 15000 == 0 do initTestParticle()
 
 		sdl.GL_SwapWindow(ctx.window)
 
