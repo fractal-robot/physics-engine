@@ -34,7 +34,7 @@ getProjectile :: proc(type: ShotType) -> (projectile: Particle) {
 		}
 	}
 
-	projectile.pos = {4, 1.5, 0}
+	projectile.pos = {4, 20, 0}
 	projectile.startTime = real(ctx.currentSecond)
 	projectile.type = type
 

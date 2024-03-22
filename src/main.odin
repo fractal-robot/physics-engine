@@ -35,8 +35,8 @@ CTX :: struct {
 	currentTime:   i64,
 	currentSecond: f64,
 	shaderID:      u32,
+	gridShaderID:  u32,
 	relativeMode:  sdl.bool,
-	cubeSize:      f32,
 	imIO:          ^im.IO,
 }
 ctx: CTX
@@ -105,6 +105,9 @@ init :: proc() -> (ok: bool) {
 
 	gl.Enable(gl.DEPTH_TEST)
 
+	gl.Enable(gl.BLEND)
+	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+
 	gl.Viewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT)
 
 	gl.PolygonMode(gl.FRONT_AND_BACK, gl.LINE)
@@ -132,15 +135,103 @@ init :: proc() -> (ok: bool) {
 
 		imgui_impl_sdl2.InitForOpenGL(ctx.window, ctx.gl)
 		imgui_impl_opengl3.Init(nil)
-
 	}
-
-	{
-		ctx.cubeSize = 1
-	}
-
 
 	return true
+}
+
+createGrid :: proc() -> (vao: u32) {
+	gridPlaneVertices := []f32 {
+		1,
+		1,
+		0,
+		-1,
+		-1,
+		0,
+		-1,
+		1,
+		0,
+		-1,
+		-1,
+		0,
+		1,
+		1,
+		0,
+		1,
+		-1,
+		0,
+	}
+	vbo: u32
+	gl.GenVertexArrays(1, &vao)
+	gl.GenBuffers(1, &vbo)
+	gl.BindVertexArray(vao)
+	defer gl.BindVertexArray(0)
+	gl.BindBuffer(gl.ARRAY_BUFFER, vbo)
+	defer gl.BindBuffer(gl.ARRAY_BUFFER, 0)
+	gl.BufferData(
+		gl.ARRAY_BUFFER,
+		len(gridPlaneVertices) * size_of(f32),
+		raw_data(gridPlaneVertices),
+		gl.STATIC_DRAW,
+	)
+	gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, 3 * size_of(f32), 0)
+	gl.EnableVertexAttribArray(0)
+
+	return
+}
+
+drawGrid :: proc(vao: u32, proj: ^glm.mat4) {
+	gl.UseProgram(ctx.gridShaderID)
+	defer gl.UseProgram(0)
+	uniformsGrid := gl.get_uniforms_from_program(ctx.gridShaderID)
+
+
+	gl.UniformMatrix4fv(
+		uniformsGrid["view"].location,
+		1,
+		false,
+		&camera.view[0, 0],
+	)
+	gl.UniformMatrix4fv(
+		uniformsGrid["projection"].location,
+		1,
+		false,
+		&proj[0, 0],
+	)
+
+	gl.PolygonMode(gl.FRONT_AND_BACK, gl.FILL)
+	gl.BindVertexArray(vao)
+	gl.BindVertexArray(vao)
+	gl.DrawArrays(gl.TRIANGLES, 0, 6)
+	gl.PolygonMode(gl.FRONT_AND_BACK, gl.LINE)
+}
+
+drawIm :: proc() {
+	imgui_impl_opengl3.NewFrame()
+	imgui_impl_sdl2.NewFrame()
+	im.NewFrame()
+
+	flags: im.WindowFlags = im.WindowFlags_NoDecoration
+
+	im.SetNextWindowPos({20, 20})
+	im.SetNextWindowBgAlpha(1)
+	im.SetNextWindowSize({400, 80})
+
+
+	if im.Begin("controls", nil, flags) {
+		im.Text(
+			"Application average %.3f ms/frame (%.1f FPS)",
+			1000.0 / ctx.imIO.Framerate,
+			ctx.imIO.Framerate,
+		)
+		im.Text("Physics instances: %i", len(particles))
+	}
+
+	im.End()
+	im.Render()
+	imgui_impl_opengl3.RenderDrawData(im.GetDrawData())
+
+
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -150,6 +241,8 @@ main :: proc() {
 	init()
 
 	cube = createCube()
+
+	vao := createGrid()
 
 	shaderProgramOk: bool
 	ctx.shaderID, shaderProgramOk = gl.load_shaders_file(
@@ -162,6 +255,16 @@ main :: proc() {
 	}
 	gl.UseProgram(ctx.shaderID)
 
+
+	ctx.gridShaderID, shaderProgramOk = gl.load_shaders_file(
+		"../shader/grid.vert",
+		"../shader/grid.frag",
+	)
+	if !shaderProgramOk {
+		log.errorf("Failed to create GLSL program.")
+		return
+	}
+
 	proj := glm.mat4Perspective(
 		glm.radians(f32(45.0)),
 		WINDOW_WIDTH / WINDOW_HEIGHT,
@@ -169,8 +272,12 @@ main :: proc() {
 		1000,
 	)
 
+
+	gl.UseProgram(ctx.shaderID)
+
 	uniforms := gl.get_uniforms_from_program(ctx.shaderID)
 	gl.UniformMatrix4fv(uniforms["projection"].location, 1, false, &proj[0, 0])
+
 
 	currentFrame, lastFrame: i64
 
@@ -197,6 +304,7 @@ main :: proc() {
 		if processControls() do break loop
 		processMovements()
 
+		gl.UseProgram(ctx.shaderID)
 		{
 			camera.view = glm.mat4LookAt(
 				camera.pos,
@@ -215,44 +323,14 @@ main :: proc() {
 		gl.ClearColor(0, 0, 0, 1)
 		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
+		drawGrid(vao, &proj)
 		drawParticles()
-
-		{
-			imgui_impl_opengl3.NewFrame()
-			imgui_impl_sdl2.NewFrame()
-			im.NewFrame()
-
-			flags: im.WindowFlags = im.WindowFlags_NoDecoration
-
-			im.SetNextWindowPos({20, 20})
-			im.SetNextWindowBgAlpha(1)
-			im.SetNextWindowSize({400, 80})
-
-
-			if im.Begin("controls", nil, flags) {
-				im.Text(
-					"Application average %.3f ms/frame (%.1f FPS)",
-					1000.0 / ctx.imIO.Framerate,
-					ctx.imIO.Framerate,
-				)
-				im.Text("Physics instances: %i", len(particles))
-				im.SliderFloat("Cube size", &ctx.cubeSize, 0, 10)
-			}
-
-			im.End()
-			im.Render()
-			imgui_impl_opengl3.RenderDrawData(im.GetDrawData())
-		}
-
-		gl.UseProgram(ctx.shaderID)
-
+		drawIm()
 
 		if ctx.relativeMode == true do updateParticles()
-
 		if counter % 15000 == 0 do initTestParticle()
 
 		sdl.GL_SwapWindow(ctx.window)
-
 		counter += 1
 	}
 }

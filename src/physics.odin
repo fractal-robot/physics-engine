@@ -53,7 +53,8 @@ updateParticles :: proc() {
 	// Traversal in reverse so we don't have to call updateParticle again when
 	// removing element
 	#reverse for &currentParticle, index in particles {
-		if real(ctx.currentSecond) - real(currentParticle.startTime) > 50 {
+		if real(ctx.currentSecond) - real(currentParticle.startTime) > 50 ||
+		   currentParticle.pos.y <= 0 {
 			unordered_remove(&particles, index)
 		}
 
@@ -66,13 +67,12 @@ cube: Shape
 drawParticles :: proc() {
 	if len(particles) == 0 do return
 
-
+	gl.UseProgram(ctx.shaderID)
 	uniforms := gl.get_uniforms_from_program(ctx.shaderID)
 
 	for i in 0 ..< len(particles) {
 		if particles[i].type == .unused do continue
 		model := glm.mat4(1)
-		model = glm.mat4Scale(ctx.cubeSize) * model
 		model = glm.mat4Translate(particles[i].pos.xyz) * model
 		gl.UniformMatrix4fv(uniforms["model"].location, 1, false, &model[0, 0])
 
