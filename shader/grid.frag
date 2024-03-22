@@ -8,27 +8,36 @@ in mat4 fragProj;
 
 out vec4 outColor;
 
-vec4 grid(vec3 fragPos3D, float scale, bool drawOnlyAxis) {
+vec4 drawUnitAxes(vec3 fragPos3D, float lineWidth) {
+    vec4 color = vec4(0.0); // Initialize color as black
+
+    // Check if the fragment position is exactly on the x-axis or z-axis
+    if (abs(fragPos3D.x) < lineWidth) {
+        color = vec4(1.0, 0.0, 0.0, 1.0); // Red for x-axis
+    }
+    else if (abs(fragPos3D.z) < lineWidth) {
+        color = vec4(0.0, 0.0, 1.0, 1.0); // Blue for z-axis
+    }
+
+    // Apply line width
+    vec2 fragPos2D = fragPos3D.xz;
+    float derivative = fwidth(dot(fragPos2D, fragPos2D));
+    float line = min(abs(fwidth(fragPos2D.x)) + abs(fwidth(fragPos2D.y)), 1.0);
+
+    return color;
+}
+
+
+vec4 grid(vec3 fragPos3D, float scale) {
     vec2 coord = fragPos3D.xz * scale;
     vec2 derivative = fwidth(coord);
-    vec2 grid = abs(fract(coord - 0.5) - 0.5) / derivative;
+    vec2 grid = abs(fract(coord - 0.5) - 0.5) / max(derivative, 0.001);
     float line = min(grid.x, grid.y);
     float minimumz = min(derivative.y, 1);
     float minimumx = min(derivative.x, 1);
 
-    vec4 color;
-    if (drawOnlyAxis) {
-	color = vec4(0.0, 0.0, 0.0, 0.0 );
-    } else {
-	color = vec4(0.2, 0.2, 0.2, 1.0 - min(line, 1.0));
-    }
+    vec4 color = vec4(0.2, 0.2, 0.2, 1.0 - min(line, 1.0));
 
-    // z axis
-    if(fragPos3D.x > -0.1 * minimumx && fragPos3D.x < 0.1 * minimumx)
-        color.z = 1.0;
-    // x axis
-    if(fragPos3D.z > -0.1 * minimumz && fragPos3D.z < 0.1 * minimumz)
-        color.x = 1.0;
     return color;
 }
 
@@ -38,7 +47,7 @@ float computeDepth(vec3 pos) {
 }
 float computeLinearDepth(vec3 pos) {
     float near = 0.01;
-    float far = 10;
+    float far = 50;
 
     vec4 clip_space_pos = fragProj * fragView * vec4(pos.xyz, 1.0);
     float clip_space_depth = (clip_space_pos.z / clip_space_pos.w) * 2.0 - 1.0;   
@@ -56,6 +65,11 @@ void main() {
     float linearDepth = computeLinearDepth(fragPos3D);
     float fading = max(0, (0.5 - linearDepth));
 
-    outColor = (grid(fragPos3D, 1, false) + grid(fragPos3D, 10, true)) * float(t > 0); 
-    outColor.a *= fading;
+    vec4 gridColor = grid(fragPos3D, .1) * float(t > 0);
+    gridColor.a *= fading;
+
+    vec4 unitAxisColor = drawUnitAxes(fragPos3D, .5) * float(t > 0); 
+    unitAxisColor.a;
+
+    outColor = unitAxisColor + gridColor;
 }
