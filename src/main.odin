@@ -38,6 +38,7 @@ CTX :: struct {
 	gridShaderID:  u32,
 	relativeMode:  sdl.bool,
 	imIO:          ^im.IO,
+	frameDuration: f64,
 }
 ctx: CTX
 
@@ -201,8 +202,8 @@ drawGrid :: proc(vao: u32, proj: ^glm.mat4) {
 
 	gl.PolygonMode(gl.FRONT_AND_BACK, gl.FILL)
 	gl.BindVertexArray(vao)
-	gl.BindVertexArray(vao)
 	gl.DrawArrays(gl.TRIANGLES, 0, 6)
+	gl.BindVertexArray(0)
 	gl.PolygonMode(gl.FRONT_AND_BACK, gl.LINE)
 }
 
@@ -272,7 +273,6 @@ main :: proc() {
 		1000,
 	)
 
-
 	gl.UseProgram(ctx.shaderID)
 
 	uniforms := gl.get_uniforms_from_program(ctx.shaderID)
@@ -286,6 +286,8 @@ main :: proc() {
 	timer: time.Stopwatch
 	time.stopwatch_start(&timer)
 
+	frameDuration: time.Stopwatch
+
 	refCube := createCube()
 	cube = createCube()
 
@@ -294,10 +296,10 @@ main :: proc() {
 	counter := 1
 
 	loop: for {
+		time.stopwatch_start(&frameDuration)
 		newTime := time.tick_now()._nsec
 		deltaTime = f64(newTime - ctx.currentTime) / 100000
 		ctx.currentTime = newTime
-		// ctx.currentSecond = time.duration_seconds()
 
 		ctx.currentSecond = time.duration_seconds(time.stopwatch_duration(timer))
 
@@ -325,12 +327,20 @@ main :: proc() {
 
 		drawGrid(vao, &proj)
 		drawParticles()
+
 		drawIm()
+
 
 		if ctx.relativeMode == true do updateParticles()
 		if counter % 15000 == 0 do initTestParticle()
 
+
 		sdl.GL_SwapWindow(ctx.window)
 		counter += 1
+
+		ctx.frameDuration = time.duration_seconds(
+			time.stopwatch_duration(frameDuration),
+		)
+		time.stopwatch_reset(&frameDuration)
 	}
 }

@@ -20,31 +20,40 @@ Particle :: struct {
 	inverseMass: real, // Support infinite mass, integration is easier
 	startTime:   real,
 	type:        ShotType,
+	forceAccum:  v3,
 }
 
 particles: [dynamic]Particle
 
+clearAccumulator :: proc(particle: ^Particle) {
+	particle.forceAccum = 0
+}
+
 // Newton-Euler integration method, linear approximation to the correct integral
 particleIntegrate :: proc(particle: ^Particle) {
-	duration := real(ctx.currentSecond) / 100000
+	duration := f32(ctx.frameDuration)
 
 	if particle.inverseMass <= 0 do return
 	assert(duration > 0)
 
 	particle.pos += particle.vel * duration
+
+	resultingAcc: v3 = particle.forceAccum * particle.inverseMass
+
+	// particle.vel += resultingAcc * duration
 	particle.vel += particle.acc * duration
+
 	particle.vel *= math.pow(particle.damping, duration)
 
 	clearAccumulator(particle)
-
-	clearAccumulator :: proc(particle: ^Particle) {
-
-	}
 }
 
-particleKineticEnergy :: proc(particle: Particle) -> (energy: real) {
-	mass := 1 / particle.inverseMass
-	return mass * math.pow(math.abs(magnitude(particle.vel)), 2) / 2
+particleAddForce :: proc(particle: ^Particle, force: v3) {
+	particle.forceAccum += force
+}
+
+particleGetMass :: proc(particle: ^Particle) -> real {
+	return 1 / particle.inverseMass
 }
 
 updateParticles :: proc() {
@@ -80,8 +89,7 @@ drawParticles :: proc() {
 		case .pistol:
 			gl.Uniform3f(uniforms["color"].location, 1, 1, 1)
 		case .artillery:
-			gl.Uniform3f(uniforms["color"].location, 0, 1, 1)
-		case .fireball:
+			gl.Uniform3f(uniforms["color"].location, 0, 1, 1);case .fireball:
 			gl.Uniform3f(uniforms["color"].location, 1, 0, 1)
 		case .unused:
 			gl.Uniform3f(uniforms["color"].location, 1, 1, 1)

@@ -42,9 +42,10 @@ vec4 grid(vec3 fragPos3D, float scale) {
 }
 
 float computeDepth(vec3 pos) {
-    vec4 clip_space_pos = fragProj * fragView * vec4(pos.xyz, 1.0);
-    return (clip_space_pos.z / clip_space_pos.w);
+    vec4 clip_space_pos = fragProj * fragView * vec4(pos, 1.0);
+    return 0.5 * (clip_space_pos.z / clip_space_pos.w + 1.0);
 }
+
 float computeLinearDepth(vec3 pos) {
     float near = 0.01;
     float far = 50;
@@ -64,12 +65,13 @@ void main() {
 
     float linearDepth = computeLinearDepth(fragPos3D);
     float fading = max(0, (0.5 - linearDepth));
+    float unitAxisFading = max(0, (1 - linearDepth));
 
     vec4 gridColor = grid(fragPos3D, .1) * float(t > 0);
     gridColor.a *= fading;
 
     vec4 unitAxisColor = drawUnitAxes(fragPos3D, .5) * float(t > 0); 
-    unitAxisColor.a;
+    unitAxisColor.a *= unitAxisFading;
 
     outColor = unitAxisColor + gridColor;
 }
