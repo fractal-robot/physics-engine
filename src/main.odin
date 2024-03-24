@@ -26,19 +26,20 @@ GL_VERSION_MINOR :: 4
 deltaTime: f64
 
 CTX :: struct {
-	window:        ^sdl.Window,
-	renderer:      ^sdl.Renderer,
-	event:         sdl.Event,
-	keyboard:      []u8,
-	shouldClose:   bool,
-	gl:            sdl.GLContext,
-	currentTime:   i64,
-	currentSecond: f64,
-	shaderID:      u32,
-	gridShaderID:  u32,
-	relativeMode:  sdl.bool,
-	imIO:          ^im.IO,
-	frameDuration: f64,
+	window:          ^sdl.Window,
+	renderer:        ^sdl.Renderer,
+	event:           sdl.Event,
+	keyboard:        []u8,
+	shouldClose:     bool,
+	gl:              sdl.GLContext,
+	currentTime:     i64,
+	currentSecond:   f64,
+	shaderID:        u32,
+	gridShaderID:    u32,
+	relativeMode:    sdl.bool,
+	imIO:            ^im.IO,
+	frameDuration:   f64,
+	simulationSpeed: f32,
 }
 ctx: CTX
 
@@ -100,11 +101,14 @@ init :: proc() -> (ok: bool) {
 	sdl.GL_SetAttribute(.CONTEXT_PROFILE_MASK, i32(sdl.GLprofile.CORE))
 	sdl.GL_SetAttribute(.CONTEXT_MAJOR_VERSION, GL_VERSION_MAJOR)
 	sdl.GL_SetAttribute(.CONTEXT_MINOR_VERSION, GL_VERSION_MINOR)
+	sdl.GL_SetAttribute(.MULTISAMPLEBUFFERS, 1)
+	sdl.GL_SetAttribute(.MULTISAMPLESAMPLES, 4)
 
 	ctx.gl = sdl.GL_CreateContext(ctx.window)
 	gl.load_up_to(GL_VERSION_MAJOR, GL_VERSION_MINOR, sdl.gl_set_proc_address)
 
 	gl.Enable(gl.DEPTH_TEST)
+	gl.Enable(gl.MULTISAMPLE)
 
 	gl.Enable(gl.BLEND)
 	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
@@ -136,6 +140,10 @@ init :: proc() -> (ok: bool) {
 
 		imgui_impl_sdl2.InitForOpenGL(ctx.window, ctx.gl)
 		imgui_impl_opengl3.Init(nil)
+	}
+
+	{
+		ctx.simulationSpeed = 1
 	}
 
 	return true
@@ -181,6 +189,9 @@ createGrid :: proc() -> (vao: u32) {
 	return
 }
 
+////////////////////////////////////////////////////////////////////////////////
+//// Draw
+
 drawGrid :: proc(vao: u32, proj: ^glm.mat4) {
 	gl.UseProgram(ctx.gridShaderID)
 	defer gl.UseProgram(0)
@@ -216,7 +227,7 @@ drawIm :: proc() {
 
 	im.SetNextWindowPos({20, 20})
 	im.SetNextWindowBgAlpha(1)
-	im.SetNextWindowSize({400, 80})
+	// im.SetNextWindowSize({400, 80})
 
 
 	if im.Begin("controls", nil, flags) {
@@ -226,13 +237,13 @@ drawIm :: proc() {
 			ctx.imIO.Framerate,
 		)
 		im.Text("Physics instances: %i", len(particles))
+
+		im.SliderFloat("Simulation speed", &ctx.simulationSpeed, -1, 1)
 	}
 
 	im.End()
 	im.Render()
 	imgui_impl_opengl3.RenderDrawData(im.GetDrawData())
-
-
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -331,9 +342,8 @@ main :: proc() {
 		drawIm()
 
 
-		if ctx.relativeMode == true do updateParticles()
+		updateParticles()
 		if counter % 15000 == 0 do initTestParticle()
-
 
 		sdl.GL_SwapWindow(ctx.window)
 		counter += 1
@@ -341,6 +351,8 @@ main :: proc() {
 		ctx.frameDuration = time.duration_seconds(
 			time.stopwatch_duration(frameDuration),
 		)
+		ctx.frameDuration *= f64(ctx.simulationSpeed)
+
 		time.stopwatch_reset(&frameDuration)
 	}
 }

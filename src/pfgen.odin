@@ -1,5 +1,7 @@
 package main
 
+import "core:math"
+
 ParticleForceGenerator :: struct {}
 
 ParticleForceRegistration :: struct {
@@ -39,7 +41,7 @@ updateForce :: proc(particle: ^Particle) {
 ////////////////////////////////////////////////////////////////////////////////
 //// Gravity
 
-particleGravity :: struct {
+ParticleGravity :: struct {
 	gravity: v3,
 }
 
@@ -48,7 +50,7 @@ particleGravity :: struct {
 
 particleUpdateGravity :: proc(
 	particle: ^Particle,
-	using particleGravity: particleGravity,
+	using particleGravity: ParticleGravity,
 ) {
 	if (particle.inverseMass == 0) do return
 
@@ -58,14 +60,14 @@ particleUpdateGravity :: proc(
 ////////////////////////////////////////////////////////////////////////////////
 //// Drag
 
-particleDrag :: struct {
+ParticleDrag :: struct {
 	k1: real,
 	k2: real,
 }
 
 particleUpdateDrag :: proc(
 	particle: ^Particle,
-	using particleDrag: particleDrag,
+	using particleDrag: ParticleDrag,
 ) {
 	force: v3 = particle.vel
 	dragCoeff := magnitude(force)
@@ -74,6 +76,71 @@ particleUpdateDrag :: proc(
 	force *= -dragCoeff
 
 	particleAddForce(particle, force)
+}
 
+////////////////////////////////////////////////////////////////////////////////
+//// Spring
 
+// Hook's law
+// We'll need to create and register a generator for each
+
+ParticleSpring :: struct {
+	other:          ^Particle, // The particle at the other end
+	springConstant: real,
+	restLength:     real,
+}
+
+particleUpdateSpring :: proc(
+	particle: ^Particle,
+	using particleSpring: ParticleSpring,
+) {
+	force: v3 = particle.pos - other.pos
+	magnitude: real = math.abs(magnitude(force) - restLength) * springConstant
+	normalize(&force)
+	force *= -magnitude
+	particleAddForce(particle, force)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//// Anchored spring
+
+ParticleEnchoredSpring :: struct {
+	anchor:         v3, // The location of the anchored end of the spring
+	springConstant: real,
+	restLength:     real,
+}
+
+particleUpdateEnchoredSpring :: proc(
+	particle: ^Particle,
+	using particleEnchoredSpring: ParticleEnchoredSpring,
+) {
+	force: v3 = particle.pos - particleEnchoredSpring.anchor
+	magnitude: real = math.abs(magnitude(force) - restLength) * springConstant
+	normalize(&force)
+	force *= -magnitude
+	particleAddForce(particle, force)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//// Bungee
+
+// Only produce pulling force
+
+ParticleBungee :: struct {
+	other:          ^Particle,
+	springConstant: real,
+	restLength:     real, // At the point it begins to generate a force
+}
+
+particleUpdateBungee :: proc(
+	particle: ^Particle,
+	using particleBungee: ParticleBungee,
+) {
+	force: v3 = particle.pos - other.pos
+	magnitude: real = magnitude(force)
+	if magnitude <= restLength do return
+	magnitude = math.abs(magnitude - restLength) * springConstant
+	normalize(&force)
+	force *= -magnitude
+	particleAddForce(particle, force)
 }

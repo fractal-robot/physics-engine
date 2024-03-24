@@ -10,7 +10,7 @@ import gl "vendor:OpenGL"
 real :: f32
 
 
-v3 :: distinct [3]real
+v3 :: [3]real
 
 Particle :: struct {
 	pos:         v3,
@@ -31,10 +31,9 @@ clearAccumulator :: proc(particle: ^Particle) {
 
 // Newton-Euler integration method, linear approximation to the correct integral
 particleIntegrate :: proc(particle: ^Particle) {
-	duration := f32(ctx.frameDuration)
+	duration := real(ctx.frameDuration)
 
 	if particle.inverseMass <= 0 do return
-	assert(duration > 0)
 
 	particle.pos += particle.vel * duration
 
@@ -82,7 +81,12 @@ drawParticles :: proc() {
 	for i in 0 ..< len(particles) {
 		if particles[i].type == .unused do continue
 		model := glm.mat4(1)
-		model = glm.mat4Translate(particles[i].pos.xyz) * model
+		particlePos: glm.vec3 =  {
+			f32(particles[i].pos.x),
+			f32(particles[i].pos.y),
+			f32(particles[i].pos.z),
+		}
+		model = glm.mat4Translate(particlePos) * model
 		gl.UniformMatrix4fv(uniforms["model"].location, 1, false, &model[0, 0])
 
 		switch particles[i].type {

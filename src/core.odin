@@ -14,3 +14,7 @@ squareMagnitude :: proc(v: v3) -> (magnitude: real) {
 normalize :: proc(v: ^v3) {
 	v^ /= magnitude(v^)
 }
+
+dotPdt :: proc(v1, v2: v3) -> real {
+	return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z
+}
